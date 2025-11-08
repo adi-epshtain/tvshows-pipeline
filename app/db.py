@@ -22,3 +22,21 @@ async def init_db():
             processed_at TEXT
         )""")
         await db.commit()
+
+
+async def create_top_shows_table():
+    """Create Top_Shows table if not exists."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS Top_Shows (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            language TEXT,
+            genres TEXT,
+            premiered TEXT,
+            rating_average REAL,
+            processed_at TEXT
+        )""")
+        await db.commit()
+
+
