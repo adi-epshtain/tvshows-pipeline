@@ -1,7 +1,8 @@
 from datetime import datetime
 import aiosqlite
-from app.db import DB_PATH, init_db, create_top_shows_table
-from app.api_client import fetch_all_shows
+from app.db import DB_PATH, init_db, create_top_shows_table, \
+    create_top_shows_cast_table
+from app.api_client import fetch_all_shows, fetch_cast
 
 
 async def ingest_all_shows():
@@ -56,3 +57,45 @@ async def compute_top_shows(years: int = 10):
         await db.execute(query, (processed_at,))
         await db.commit()
 
+
+async def fetch_top_shows_cast():
+    """Fetch cast for each top show and save to Top_Shows_Cast."""
+    await create_top_shows_cast_table()
+    processed_at = datetime.utcnow().isoformat()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Get top shows from the DB
+        top_shows = await db.execute_fetchall("SELECT id, name FROM Top_Shows")
+        await db.execute("DELETE FROM Top_Shows_Cast")
+
+        for show_id, show_name in top_shows:
+            try:
+                cast_data = await fetch_cast(show_id)
+                for entry in cast_data:
+                    person = entry.get("person", {})
+                    character = entry.get("character", {})
+
+                    await db.execute("""
+                        INSERT INTO Top_Shows_Cast (
+                            show_id, show_name, person_id, person_name, 
+                            person_birthday, person_deathday, person_gender,
+                            person_country_name, character_id, character_name,
+                            image, processed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        show_id,
+                        show_name,
+                        person.get("id"),
+                        person.get("name"),
+                        person.get("birthday"),
+                        person.get("deathday"),
+                        person.get("gender"),
+                        (person.get("country") or {}).get("name"),
+                        character.get("id"),
+                        character.get("name"),
+                        (character.get("image") or {}).get("original"),
+                        processed_at
+                    ))
+                await db.commit()
+            except Exception as e:
+                print(f"Failed fetching cast for show {show_id}: {e}")
