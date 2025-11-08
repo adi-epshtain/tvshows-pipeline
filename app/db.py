@@ -1,5 +1,7 @@
 import aiosqlite
 
+from app.logger import log
+
 DB_PATH = "tvshows.db"
 
 
@@ -22,6 +24,7 @@ async def init_db():
             processed_at TEXT
         )""")
         await db.commit()
+    log.info("All_Shows table initialized")
 
 
 async def create_top_shows_table():
@@ -38,6 +41,7 @@ async def create_top_shows_table():
             processed_at TEXT
         )""")
         await db.commit()
+    log.info("Top_Shows table initialized")
 
 
 async def create_top_shows_cast_table():
@@ -60,3 +64,4 @@ async def create_top_shows_cast_table():
         )
         """)
         await db.commit()
+    log.info("Top_Shows_Cast table initialized")

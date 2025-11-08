@@ -50,6 +50,7 @@ Top_Shows_Cast - cast members and characters of top shows
 * Async architecture - all HTTP and DB operations are async (httpx + aiosqlite)
 * Modular structure - clear separation between API, DB, and pipeline logic
 * Dockerized deployment - easy to run and test 
+* Error handling - basic error handling for HTTP and DB operations
 
 
 ---
