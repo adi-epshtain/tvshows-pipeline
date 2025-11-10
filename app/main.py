@@ -25,7 +25,7 @@ async def ensure_db_initialized():
 # 1. Update all data from TV maze (main pipeline)
 # --------------------------------------------
 @app.post("/update_shows")
-async def update_shows(years: int = Query(15, ge=0)):
+async def update_shows(years: int = Query(10, ge=0)):
     """Fetch all shows, compute top shows, and fetch cast."""
     try:
         await ingest_all_shows()
