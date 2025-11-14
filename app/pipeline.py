@@ -1,37 +1,65 @@
 from datetime import datetime
 import aiosqlite
+from app.api_client import fetch_all_shows, fetch_cast
 from app.db import DB_PATH, init_db, create_top_shows_table, \
     create_top_shows_cast_table
-from app.api_client import fetch_all_shows, fetch_cast
+from app.pipeline_status import pipeline_status, update_status
+
+
+async def run_full_pipeline(years: int):
+    try:
+        update_status("Fetching all shows", 10)
+        await ingest_all_shows()
+
+        update_status("Computing top shows", 40)
+        await compute_top_shows(years)
+
+        update_status("Fetching cast for top shows", 80)
+        await fetch_top_shows_cast()
+
+        update_status("Completed", 100)
+        pipeline_status.running = False
+
+    except Exception as e:
+        pipeline_status.error = str(e)
+        pipeline_status.running = False
+        pipeline_status.step = "Failed"
+        pipeline_status.progress = 0
 
 
 async def ingest_all_shows():
-    """Fetch all shows from API and insert into SQLite."""
+    """Fetch all shows from API and insert into SQLite using bulk insert"""
     await init_db()
     shows = await fetch_all_shows()
     processed_at = datetime.utcnow().isoformat()
 
+    # Build rows for bulk insert
+    rows = [
+        (
+            show.get("id"),
+            show.get("name"),
+            show.get("type"),
+            show.get("language"),
+            ",".join(show.get("genres", [])),
+            show.get("status"),
+            show.get("premiered"),
+            show.get("ended"),
+            (show.get("rating") or {}).get("average"),
+            show.get("summary"),
+            show.get("updated"),
+            processed_at
+        )
+        for show in shows
+    ]
+
     async with aiosqlite.connect(DB_PATH) as db:
-        for show in shows:
-            await db.execute("""
-                INSERT OR REPLACE INTO All_Shows 
-                (id, name, type, language, genres, status, premiered, ended,
-                 rating_average, summary, updated, processed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                show.get("id"),
-                show.get("name"),
-                show.get("type"),
-                show.get("language"),
-                ",".join(show.get("genres", [])),
-                show.get("status"),
-                show.get("premiered"),
-                show.get("ended"),
-                (show.get("rating") or {}).get("average"),
-                show.get("summary"),
-                show.get("updated"),
-                processed_at
-            ))
+        await db.executemany("""
+            INSERT OR REPLACE INTO All_Shows 
+            (id, name, type, language, genres, status, premiered, ended,
+             rating_average, summary, updated, processed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+
         await db.commit()
 
 

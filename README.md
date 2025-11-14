@@ -47,11 +47,51 @@ Top_Shows_Cast - cast members and characters of top shows
 ---
 
 ## Design Notes
-* Async architecture - all HTTP and DB operations are async (httpx + aiosqlite)
-* Modular structure - clear separation between API, DB, and pipeline logic
-* Dockerized deployment - easy to run and test 
-* Error handling - basic error handling for HTTP and DB operations
+* Async architecture – all HTTP calls, DB operations, and pipeline steps run fully async (httpx + aiosqlite).
+* Modular structure – clear separation between API routers, pipeline orchestration, DB layer, and TVMaze API client.
+* Background pipeline execution – long-running ETL flow runs as a FastAPI Background Task, returning 202 Accepted immediately without blocking the client.
+* Progress tracking – pipeline exposes a `/pipeline/status` endpoint with live progress, step name, and error state, supporting long-polling and UI progress bars.
+* Controlled concurrency – TVMaze fetching uses asyncio.Semaphore to prevent API overload and keep network utilization predictable.
+* Resilient HTTP layer – built-in retry with incremental backoff, request timeouts, and structured pagination handling (TVMaze uses HTTP 404 to indicate end-of-data).
+* Efficient ingestion – batch (bulk) inserts into SQLite dramatically reduce transaction overhead and improve ETL throughput.
+* Dockerized deployment – isolated, predictable environment for running, testing, and shipping the service.
 
+```md
+## Sequence Diagram – Pipeline Flow
+
+User
+  │
+  │ POST /pipeline/update        (202 Accepted)
+  ▼
+FastAPI (Update Endpoint)
+  │
+  ├── triggers Background Task → run_full_pipeline()
+  │
+  ▼
+Pipeline Orchestrator
+  │
+  ├── update_status("Fetching all shows", %)
+  ├── ingest_all_shows()
+  │       └── fetch_all_shows() → concurrent paginated HTTP calls
+  │
+  ├── update_status("Computing top shows", %)
+  ├── compute_top_shows()
+  │
+  ├── update_status("Fetching cast", %)
+  ├── fetch_top_shows_cast()
+  │
+  └── update_status("Completed", 100)
+
+Meanwhile…
+
+User
+  │
+  │ GET /pipeline/status         (polling)
+  ▼
+FastAPI (Status Endpoint)
+  │
+  └── returns current progress, step, running flag, and errors.
+  ```
 
 ---
 ## Author
