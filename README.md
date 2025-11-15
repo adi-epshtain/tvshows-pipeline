@@ -20,16 +20,19 @@ it via Dockerized REST endpoints.
 
 ## ⚙️ Setup & Run
 
-### Clone and build
+### Running with Docker 
 ```bash
-git clone https://github.com/<your-user>/tvshows-pipeline.git
-cd tvshows-pipeline
 docker-compose up --build
+http://localhost:8000/docs # swagger UI
 ```
 
-## Test via Swagger
-Once the service is running, open the interactive Swagger UI provided by FastAPI:
-http://localhost:8000/docs
+### Local Development (Windows)
+Redis is not available natively on Windows. run it in a lightweight container:
+
+```bash
+docker run -d -p 6379:6379 --name redis-local redis:7
+http://localhost:8000/docs # swagger UI
+```
 
 ---
 # Database
@@ -55,9 +58,10 @@ Top_Shows_Cast - cast members and characters of top shows
 * Resilient HTTP layer – built-in retry with incremental backoff, request timeouts, and structured pagination handling (TVMaze uses HTTP 404 to indicate end-of-data).
 * Efficient ingestion – batch (bulk) inserts into SQLite dramatically reduce transaction overhead and improve ETL throughput.
 * Dockerized deployment – isolated, predictable environment for running, testing, and shipping the service.
-
+* Redis-backed progress tracking – real-time pipeline state (step, progress %, errors) stored in Redis for fast, atomic, cross-instance updates.
+* Supports non-blocking /pipeline/update requests and consistent /pipeline/status/{request_id} polling in both local and Docker environments.
 ```md
-## Sequence Diagram – Pipeline Flow
+## Sequence Diagram – Pipeline Flow (with Redis)
 
 User
   │
@@ -65,32 +69,35 @@ User
   ▼
 FastAPI (Update Endpoint)
   │
-  ├── triggers Background Task → run_full_pipeline()
+  ├── generate request_id
+  ├── init_status(request_id) → Redis
+  ├── triggers Background Task
   │
   ▼
 Pipeline Orchestrator
   │
-  ├── update_status("Fetching all shows", %)
+  ├── update_status("Fetching all shows", %) → Redis
   ├── ingest_all_shows()
   │       └── fetch_all_shows() → concurrent paginated HTTP calls
   │
-  ├── update_status("Computing top shows", %)
+  ├── update_status("Computing top shows", %) → Redis
   ├── compute_top_shows()
   │
-  ├── update_status("Fetching cast", %)
+  ├── update_status("Fetching cast", %) → Redis
   ├── fetch_top_shows_cast()
   │
-  └── update_status("Completed", 100)
+  └── update_status("Completed", 100) → Redis
 
 Meanwhile…
 
 User
   │
-  │ GET /pipeline/status         (polling)
+  │ GET /pipeline/status/{request_id}   (polling)
   ▼
 FastAPI (Status Endpoint)
   │
-  └── returns current progress, step, running flag, and errors.
+  └── reads state from Redis (HGETALL) and returns:
+       step, progress, running flag, errors
   ```
 
 ---

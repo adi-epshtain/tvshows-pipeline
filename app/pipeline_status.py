@@ -1,24 +1,32 @@
-from dataclasses import dataclass, asdict
-from typing import Optional
+from app.redis_client import redis_client
 
 
-@dataclass
-class PipelineStatus:
-    running: bool = False
-    step: Optional[str] = None
-    progress: int = 0
-    error: Optional[str] = None
-
-    def to_dict(self):
-        return asdict(self)
+async def init_status(request_id: str):
+    await redis_client.hset(f"pipeline:{request_id}", mapping={
+        "running": "true",
+        "step": "starting",
+        "progress": "0",
+        "error": ""
+    })
 
 
-# global instance
-pipeline_status = PipelineStatus()
+async def update_status(request_id: str, step: str, progress: int):
+    await redis_client.hset(
+        f"pipeline:{request_id}",
+        mapping={
+            "running": "true",
+            "step": step,
+            "progress": str(progress),
+            "error": ""
+        }
+    )
 
 
-def update_status(step: str, progress: int):
-    pipeline_status.running = True
-    pipeline_status.step = step
-    pipeline_status.progress = progress  # 0–100
-    pipeline_status.error = None
+async def set_error(request_id: str, error: str):
+    await redis_client.hset(
+        f"pipeline:{request_id}",
+        mapping={
+            "running": "false",
+            "error": error
+        }
+    )

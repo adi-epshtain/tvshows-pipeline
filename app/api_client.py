@@ -50,7 +50,7 @@ async def fetch_page(client: httpx.AsyncClient, page: int, sem: asyncio.Semaphor
                 await asyncio.sleep(BACKOFF_BASE * attempt)
 
 
-async def fetch_all_shows(max_pages: int | None = None) -> list:
+async def fetch_all_shows(request_id: str) -> list:
     """Fetch all shows from TVMaze with structured pagination + progress updates"""
     all_shows = []
     page = 0
@@ -58,10 +58,6 @@ async def fetch_all_shows(max_pages: int | None = None) -> list:
 
     async with httpx.AsyncClient(timeout=20) as client:
         while True:
-
-            if max_pages and page >= max_pages:
-                log.info(f"Stopping early after {page} pages (testing mode)")
-                break
 
             # build batch of concurrent fetches
             tasks = [
@@ -79,10 +75,9 @@ async def fetch_all_shows(max_pages: int | None = None) -> list:
             ratio = min(pages_fetched / TOTAL_PAGES_ESTIMATE, 1.0)
             weighted_progress = int(ratio * FETCH_SHOWS_WEIGHT)
 
-            update_status(
-                step=f"Fetching all shows (page {page})",
-                progress=weighted_progress
-            )
+            await update_status(request_id=request_id,
+                                step=f"Fetching all shows (page {page})",
+                                progress=weighted_progress)
 
             # stop if ANY page in the batch is the last
             if any(result.is_last_page for result in results):

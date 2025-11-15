@@ -3,34 +3,38 @@ import aiosqlite
 from app.api_client import fetch_all_shows, fetch_cast
 from app.db import DB_PATH, init_db, create_top_shows_table, \
     create_top_shows_cast_table
-from app.pipeline_status import pipeline_status, update_status
+from app.pipeline_status import update_status, set_error
 
 
-async def run_full_pipeline(years: int):
+async def run_full_pipeline(request_id: str, years: int):
     try:
-        update_status("Fetching all shows", 10)
-        await ingest_all_shows()
+        await update_status(request_id=request_id,
+                            step="Fetching all shows",
+                            progress=10)
+        await ingest_all_shows(request_id=request_id)
 
-        update_status("Computing top shows", 40)
+        await update_status(request_id=request_id,
+                            step="Computing top shows",
+                            progress=40)
         await compute_top_shows(years)
 
-        update_status("Fetching cast for top shows", 80)
+        await update_status(request_id=request_id,
+                            step="Fetching cast for top shows",
+                            progress=80)
         await fetch_top_shows_cast()
 
-        update_status("Completed", 100)
-        pipeline_status.running = False
+        await update_status(request_id=request_id,
+                            step="Completed",
+                            progress=100)
 
     except Exception as e:
-        pipeline_status.error = str(e)
-        pipeline_status.running = False
-        pipeline_status.step = "Failed"
-        pipeline_status.progress = 0
+        await set_error(request_id=request_id, error=str(e))
 
 
-async def ingest_all_shows():
+async def ingest_all_shows(request_id: str):
     """Fetch all shows from API and insert into SQLite using bulk insert"""
     await init_db()
-    shows = await fetch_all_shows()
+    shows = await fetch_all_shows(request_id=request_id)
     processed_at = datetime.utcnow().isoformat()
 
     # Build rows for bulk insert
