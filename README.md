@@ -60,46 +60,9 @@ Top_Shows_Cast - cast members and characters of top shows
 * Dockerized deployment – isolated, predictable environment for running, testing, and shipping the service.
 * Redis-backed progress tracking – real-time pipeline state (step, progress %, errors) stored in Redis for fast, atomic, cross-instance updates.
 * Supports non-blocking /pipeline/update requests and consistent /pipeline/status/{request_id} polling in both local and Docker environments.
-```md
-## Sequence Diagram – Pipeline Flow (with Redis)
 
-User
-  │
-  │ POST /pipeline/update        (202 Accepted)
-  ▼
-FastAPI (Update Endpoint)
-  │
-  ├── generate request_id
-  ├── init_status(request_id) → Redis
-  ├── triggers Background Task
-  │
-  ▼
-Pipeline Orchestrator
-  │
-  ├── update_status("Fetching all shows", %) → Redis
-  ├── ingest_all_shows()
-  │       └── fetch_all_shows() → concurrent paginated HTTP calls
-  │
-  ├── update_status("Computing top shows", %) → Redis
-  ├── compute_top_shows()
-  │
-  ├── update_status("Fetching cast", %) → Redis
-  ├── fetch_top_shows_cast()
-  │
-  └── update_status("Completed", 100) → Redis
-
-Meanwhile…
-
-User
-  │
-  │ GET /pipeline/status/{request_id}   (polling)
-  ▼
-FastAPI (Status Endpoint)
-  │
-  └── reads state from Redis (HGETALL) and returns:
-       step, progress, running flag, errors
-  ```
-
+## System Design Diagram
+![System Design](/docs/system_design.png)
 ---
 ## Author
 **Adi Epshtain**  
