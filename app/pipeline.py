@@ -1,9 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+import asyncio
 import aiosqlite
+import httpx
 from app.api_client import fetch_all_shows, fetch_cast
 from app.db import DB_PATH, init_db, create_top_shows_table, \
     create_top_shows_cast_table
 from app.pipeline_status import update_status, set_error
+from app.logger import log
 
 
 async def run_full_pipeline(request_id: str, years: int):
@@ -74,19 +77,23 @@ async def compute_top_shows(years: int = 10):
         await db.execute("DELETE FROM Top_Shows")
         processed_at = datetime.utcnow().isoformat()
 
-        # Use f-string so {years} will be dynamically inserted
-        query = f"""
+        # Calculate minimum year in Python to prevent SQL injection
+        min_date = datetime.now() - timedelta(days=years * 365)
+        min_year = min_date.year
+
+        # Use parameterized query - all user input is passed as parameters
+        query = """
         INSERT INTO Top_Shows (id, name, language, genres, premiered, rating_average, processed_at)
         SELECT id, name, language, genres, premiered, rating_average, ?
         FROM All_Shows
         WHERE language='English'
           AND genres LIKE '%Action%'
           AND premiered IS NOT NULL
-          AND substr(premiered, 1, 4) >= strftime('%Y', 'now', '-{years} years')
+          AND CAST(substr(premiered, 1, 4) AS INTEGER) >= ?
         ORDER BY rating_average DESC
         LIMIT 10
         """
-        await db.execute(query, (processed_at,))
+        await db.execute(query, (processed_at, min_year))
         await db.commit()
 
 
@@ -99,10 +106,21 @@ async def fetch_top_shows_cast():
         # Get top shows from the DB
         top_shows = await db.execute_fetchall("SELECT id, name FROM Top_Shows")
         await db.execute("DELETE FROM Top_Shows_Cast")
+        await db.commit()
 
-        for show_id, show_name in top_shows:
+    # Fetch cast concurrently for all shows
+    async with httpx.AsyncClient(timeout=10) as client:
+        tasks = [fetch_cast(show_id, client) for show_id, _ in top_shows]
+        cast_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Insert all cast data
+    async with aiosqlite.connect(DB_PATH) as db:
+        for (show_id, show_name), cast_data in zip(top_shows, cast_results):
             try:
-                cast_data = await fetch_cast(show_id)
+                if isinstance(cast_data, Exception):
+                    log.error(f"Failed fetching cast for show {show_id}: {cast_data}")
+                    continue
+
                 for entry in cast_data:
                     person = entry.get("person", {})
                     character = entry.get("character", {})
@@ -128,6 +146,7 @@ async def fetch_top_shows_cast():
                         (character.get("image") or {}).get("original"),
                         processed_at
                     ))
-                await db.commit()
             except Exception as e:
-                print(f"Failed fetching cast for show {show_id}: {e}")
+                log.error(f"Failed processing cast for show {show_id}: {e}")
+
+        await db.commit()

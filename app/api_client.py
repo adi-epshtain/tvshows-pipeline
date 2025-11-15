@@ -8,12 +8,11 @@ from app.logger import log
 from app.pipeline_status import update_status
 
 BASE_URL = "https://api.tvmaze.com"
-MAX_CONCURRENT_REQUESTS = 10  # tune up/down depending on your network
 CONCURRENCY_LIMIT = 5
 MAX_RETRIES = 3
 BACKOFF_BASE = 0.5  # seconds
 TOTAL_PAGES_ESTIMATE = 260
-FETCH_SHOWS_WEIGHT = 70   # from 100% from pipline
+FETCH_SHOWS_WEIGHT = 70   # from 100% from pipeline
 
 
 @dataclass
@@ -25,7 +24,6 @@ class PageResult:
 async def fetch_page(client: httpx.AsyncClient, page: int, sem: asyncio.Semaphore) -> PageResult:
     """Fetch a single page with concurrency control + retry logic"""
     async with sem:
-
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 response: httpx.Response = await client.get(f"{BASE_URL}/shows?page={page}")
@@ -95,15 +93,14 @@ async def fetch_all_shows(request_id: str) -> list:
     return all_shows
 
 
-async def fetch_cast(show_id: int, retries: int = 3, backoff: float = 1.5) -> list:
+async def fetch_cast(show_id: int, client: httpx.AsyncClient, retries: int = 3, backoff: float = 1.5) -> list:
     """Fetch cast for a specific show by ID"""
     for attempt in range(1, retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{BASE_URL}/shows/{show_id}/cast")
-                resp.raise_for_status()
-                log.info(f"Cast fetched for show {show_id} (attempt {attempt})")
-                return resp.json()
+            resp = await client.get(f"{BASE_URL}/shows/{show_id}/cast")
+            resp.raise_for_status()
+            log.info(f"Cast fetched for show {show_id} (attempt {attempt})")
+            return resp.json()
         except httpx.TimeoutException:
             log.warning(f"Timeout fetching cast for show {show_id} (attempt {attempt})")
         except httpx.RequestError as e:
